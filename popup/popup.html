@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+  <title>JanitorAI Card Backup</title>
+</head>
+<body>
+  <div class="header">
+    <div class="title">Card Backup</div>
+    <div class="subtitle">Export character cards as SillyTavern V2</div>
+  </div>
+
+  <div class="container">
+    <div id="status-area">
+      <div class="status-card" id="status-card">
+        <div class="status-icon" id="status-icon"></div>
+        <div class="status-text">
+          <span class="status-label" id="status-label">Checking...</span>
+          <span class="status-detail" id="status-detail">Looking for character data</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="character-info" class="character-info hidden">
+      <div class="character-name" id="character-name"></div>
+      <div class="character-meta" id="character-meta"></div>
+    </div>
+
+    <div id="export-section" class="export-section hidden">
+      <div class="format-toggle">
+        <label class="toggle-option">
+          <input type="radio" name="format" value="json" checked>
+          <span class="toggle-label">JSON</span>
+        </label>
+        <label class="toggle-option">
+          <input type="radio" name="format" value="png">
+          <span class="toggle-label">PNG</span>
+        </label>
+      </div>
+
+      <button class="btn btn-download" id="download-btn" disabled>
+        <span class="btn-text">Download Card</span>
+      </button>
+    </div>
+
+    <div id="message-area" class="message-area hidden"></div>
+
+    <div class="debug-section">
+      <label class="debug-toggle">
+        <input type="checkbox" id="debug-toggle">
+        <span class="debug-label">Debug Mode</span>
+      </label>
+    </div>
+  </div>
+
+  <script src="../lib/v2-mapper.js"></script>
+  <script src="../lib/stego.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
