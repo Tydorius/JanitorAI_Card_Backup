@@ -53,6 +53,10 @@ Fields are populated in priority order: direct API field first, then generateAlp
 - Firefox 142.0 or later
 - No build step — plain JavaScript loaded directly by the browser
 
-## Support
+## Support for Plugin
+
+For support, open an issue on Github. You can find it [here](https://github.com/Tydorius/JanitorAI_Card_Backup).
+
+## Support Me
 
 If you want to support me, you can do so on [Ko-fi](https://ko-fi.com/tydorius).
