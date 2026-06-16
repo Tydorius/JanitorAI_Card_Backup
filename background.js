@@ -14,6 +14,38 @@ function dbg(...args) {
 
 const tabCharacters = new Map();
 
+function stripEnvelopeTags(text) {
+  if (!text) return '';
+  const match = text.match(/<Start\s+\w+>\s*([\s\S]*?)\s*<End\s+\w+>/i);
+  return match ? match[1].trim() : text.trim();
+}
+
+async function enrichCharacterFromApi(characterId, tabId) {
+  try {
+    const response = await fetch(`https://janitorai.com/hampter/characters/${characterId}`, {
+      credentials: 'include'
+    });
+    if (!response.ok) {
+      console.log(`[JanitorAI Card Backup] Character enrichment failed: ${response.status}`);
+      return;
+    }
+    const fullChar = await response.json();
+
+    const tabData = tabCharacters.get(tabId);
+    if (!tabData || !tabData.character || tabData.complete) return;
+
+    if (fullChar.personality) tabData.character.personality = stripEnvelopeTags(fullChar.personality);
+    if (fullChar.scenario) tabData.character.scenario = stripEnvelopeTags(fullChar.scenario);
+    if (fullChar.example_dialogs) tabData.character.example_dialogs = stripEnvelopeTags(fullChar.example_dialogs);
+    tabData.complete = true;
+
+    setIconState('green', tabId);
+    console.log(`[JanitorAI Card Backup] Character data complete (characters API): ${tabData.character.name} [tab ${tabId}]`);
+  } catch (e) {
+    console.error('[JanitorAI Card Backup] Character enrichment error:', e);
+  }
+}
+
 function setIconState(state, tabId) {
   const iconSets = {
     gray: {
@@ -113,6 +145,7 @@ browser.webRequest.onBeforeRequest.addListener(
             dbg('Character saved for tab', tabId, '(partial)');
             setIconState('yellow', tabId);
             console.log(`[JanitorAI Card Backup] Captured character (partial): ${character.name} [tab ${tabId}]`);
+            enrichCharacterFromApi(character.id, tabId);
           }
         } else {
           dbg('Response has no character object or character.id. Top-level keys:', Object.keys(parsed));
@@ -177,7 +210,7 @@ browser.webRequest.onBeforeRequest.addListener(
             dbg('Extracted fields - personality:', extracted.personality.length, 'scenario:', extracted.scenario.length, 'example_dialogs:', extracted.example_dialogs.length);
 
             const tabData = tabId >= 0 ? tabCharacters.get(tabId) : null;
-            if (tabData && tabData.character) {
+            if (tabData && tabData.character && !tabData.complete) {
               tabData.character.personality = extracted.personality;
               tabData.character.scenario = extracted.scenario;
               tabData.character.example_dialogs = extracted.example_dialogs;
@@ -185,7 +218,9 @@ browser.webRequest.onBeforeRequest.addListener(
               dbg('Merged character fields for tab', tabId);
 
               setIconState('green', tabId);
-              console.log(`[JanitorAI Card Backup] Character data complete: ${tabData.character.name} [tab ${tabId}]`);
+              console.log(`[JanitorAI Card Backup] Character data complete (generateAlpha): ${tabData.character.name} [tab ${tabId}]`);
+            } else if (tabData && tabData.complete) {
+              dbg('Tab', tabId, 'already complete, skipping generateAlpha merge');
             } else {
               dbg('No stored character to merge with for tab', tabId);
             }
