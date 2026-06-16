@@ -61,27 +61,13 @@ function setIconState(state, tabId) {
 
 browser.webRequest.onBeforeRequest.addListener(
   (details) => {
-    dbg('onBeforeRequest fired:', details.url, 'method:', details.method, 'tabId:', details.tabId);
-
-    const chatMatch = details.url.match(/\/hampter\/chats\/([a-zA-Z0-9-]+)(?:\?|$)/);
-    if (!chatMatch) {
-      dbg('URL did not match chat pattern');
-      return;
-    }
-
-    dbg('Chat URL matched, chatId:', chatMatch[1]);
-
-    if (details.method !== 'GET') {
-      dbg('Skipping non-GET request:', details.method);
-      return;
-    }
+    console.log('[JanitorAI Card Backup] Intercepted chat request:', details.method, details.url, 'tabId:', details.tabId);
 
     if (typeof browser.webRequest.filterResponseData !== 'function') {
       console.error('[JanitorAI Card Backup] filterResponseData not available');
       return;
     }
 
-    const chatId = chatMatch[1];
     const tabId = details.tabId;
 
     let filter;
@@ -142,7 +128,7 @@ browser.webRequest.onBeforeRequest.addListener(
       filter.close();
     };
   },
-  { urls: ['*://janitorai.com/hampter/chats/*'] },
+  { urls: ['*://janitorai.com/hampter/chats*'] },
   ['blocking']
 );
 
@@ -150,7 +136,7 @@ browser.webRequest.onBeforeRequest.addListener(
   (details) => {
     if (!details.url.endsWith('/generateAlpha')) return;
     if (details.method !== 'POST') return;
-    dbg('generateAlpha request detected, tabId:', details.tabId);
+    console.log('[JanitorAI Card Backup] Intercepted generateAlpha request, tabId:', details.tabId);
 
     if (typeof browser.webRequest.filterResponseData !== 'function') return;
 
