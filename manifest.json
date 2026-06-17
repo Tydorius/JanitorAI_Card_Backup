@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JanitorAI Card Backup",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Export JanitorAI character cards as SillyTavern V2 JSON or PNG",
   "browser_specific_settings": {
     "gecko": {
@@ -27,6 +27,13 @@
   "background": {
     "scripts": ["background.js"]
   },
+  "content_scripts": [
+    {
+      "matches": ["*://janitorai.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "action": {
     "default_popup": "popup/popup.html",
     "default_title": "JanitorAI Card Backup",

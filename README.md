@@ -4,11 +4,11 @@ Firefox extension that captures character data from JanitorAI and exports it as 
 
 ## How It Works
 
-The extension uses a two-stage capture pipeline:
+The extension captures character data through two API endpoints:
 
-1. **Stage 1** — Opening a chat triggers a `GET /hampter/chats/{id}` request. The extension intercepts this and captures basic character data (name, description, avatar, first messages). The toolbar icon shows a yellow badge indicating partial capture.
+1. **Chat data** — Opening a chat triggers a `GET /hampter/chats/{id}` request. The extension intercepts this and captures basic character data (name, description, avatar, first messages). The toolbar icon shows a yellow badge.
 
-2. **Stage 2** — Sending a message triggers a `POST /generateAlpha` request. The extension extracts personality, scenario, and example dialogs from the system prompt's tagged sections. The toolbar icon turns green, indicating full capture.
+2. **Full character data** — The extension immediately fetches `GET /hampter/characters/{id}` to get personality, scenario, and example dialogs. The toolbar icon turns green when complete.
 
 3. Click the toolbar icon, choose JSON or PNG, and download.
 
@@ -26,20 +26,18 @@ Each browser tab tracks its own character independently. Navigating away from a 
 |---|---|
 | `character.name` | `data.name` |
 | `character.description` | `data.description` (tagged sections extracted and removed) |
-| `character.personality` or `<Start Personality>` tag from generateAlpha | `data.personality` |
-| `character.scenario` or `<Start Scenario>` tag from generateAlpha | `data.scenario` |
+| `character.personality` | `data.personality` |
+| `character.scenario` | `data.scenario` |
 | `character.first_messages[0]` | `data.first_mes` |
 | `character.first_messages[1..n]` | `data.alternate_greetings` |
-| `character.example_dialogs` or `<Start Example Dialog>` tag from generateAlpha | `data.mes_example` |
-
-Fields are populated in priority order: direct API field first, then generateAlpha extracted content, then tagged sections parsed from the description.
+| `character.example_dialogs` | `data.mes_example` |
 
 ## Icon States
 
 | State | Icon | Meaning |
 |---|---|---|
 | Gray | Grayscale, no badge | No character data for this tab |
-| Yellow | Grayscale, amber "!" badge | Partial data captured (chat loaded, no message sent yet) |
+| Yellow | Grayscale, amber "!" badge | Chat loaded, fetching full character data |
 | Green | Color, no badge | Full data captured, ready to export |
 
 ## Installation

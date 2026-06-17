@@ -14,33 +14,81 @@ function dbg(...args) {
 
 const tabCharacters = new Map();
 
-function stripEnvelopeTags(text) {
-  if (!text) return '';
-  const match = text.match(/<Start\s+\w+>\s*([\s\S]*?)\s*<End\s+\w+>/i);
-  return match ? match[1].trim() : text.trim();
+let _authToken = null;
+
+browser.webRequest.onBeforeSendHeaders.addListener(
+  (details) => {
+    const authHeader = details.requestHeaders.find(h => h.name.toLowerCase() === 'authorization');
+    if (authHeader && authHeader.value) {
+      _authToken = authHeader.value;
+    }
+  },
+  { urls: ['*://janitorai.com/hampter/*'] },
+  ['requestHeaders']
+);
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function extractFromSystemPrompt(systemPrompt, chatName) {
+  const result = { personality: '', scenario: '', example_dialogs: '' };
+
+  if (chatName) {
+    const escaped = escapeRegex(chatName);
+    const personaPattern = new RegExp(
+      `<${escaped}'?s?\\s*[Pp]ersona>([\\s\\S]*?)<\\/${escaped}'?s?\\s*[Pp]ersona>`,
+      'i'
+    );
+    const match = personaPattern.exec(systemPrompt);
+    if (match) result.personality = match[1].trim();
+  }
+
+  const scenarioMatch = systemPrompt.match(/<Scenario>([\s\S]*?)<\/Scenario>/i);
+  if (scenarioMatch) result.scenario = scenarioMatch[1].trim();
+
+  const dialogsMatch = systemPrompt.match(/<example_dialogs>([\s\S]*?)<\/example_dialogs>/i);
+  if (dialogsMatch) result.example_dialogs = dialogsMatch[1].trim();
+
+  return result;
+}
+
+function mergeCharacterFields(tabData, fields) {
+  if (fields.personality) tabData.character.personality = fields.personality;
+  if (fields.scenario) tabData.character.scenario = fields.scenario;
+  if (fields.example_dialogs) tabData.character.example_dialogs = fields.example_dialogs;
+  if (fields.description) tabData.character.description = fields.description;
+  if (fields.first_message) tabData.character.first_message = fields.first_message;
+  if (fields.first_messages) tabData.character.first_messages = fields.first_messages;
+  if (tabData.character.personality && tabData.character.personality.trim()) {
+    tabData.complete = true;
+    return true;
+  }
+  return false;
 }
 
 async function enrichCharacterFromApi(characterId, tabId) {
   try {
-    const response = await fetch(`https://janitorai.com/hampter/characters/${characterId}`, {
-      credentials: 'include'
+    const response = await browser.tabs.sendMessage(tabId, {
+      type: 'FETCH_CHARACTER',
+      characterId,
+      authToken: _authToken
     });
-    if (!response.ok) {
-      console.log(`[JanitorAI Card Backup] Character enrichment failed: ${response.status}`);
+    if (!response || !response.success) {
+      console.log(`[JanitorAI Card Backup] Character enrichment failed: ${response?.status || response?.error || 'content script error'}`);
       return;
     }
-    const fullChar = await response.json();
+    const fullChar = response.data;
 
     const tabData = tabCharacters.get(tabId);
     if (!tabData || !tabData.character || tabData.complete) return;
 
-    if (fullChar.personality) tabData.character.personality = stripEnvelopeTags(fullChar.personality);
-    if (fullChar.scenario) tabData.character.scenario = stripEnvelopeTags(fullChar.scenario);
-    if (fullChar.example_dialogs) tabData.character.example_dialogs = stripEnvelopeTags(fullChar.example_dialogs);
-    tabData.complete = true;
-
-    setIconState('green', tabId);
-    console.log(`[JanitorAI Card Backup] Character data complete (characters API): ${tabData.character.name} [tab ${tabId}]`);
+    if (mergeCharacterFields(tabData, fullChar)) {
+      setIconState('green', tabId);
+      console.log(`[JanitorAI Card Backup] Character data complete (characters API): ${tabData.character.name} [tab ${tabId}]`);
+    } else {
+      console.log(`[JanitorAI Card Backup] Character enrichment incomplete — personality field is empty [tab ${tabId}]`);
+    }
   } catch (e) {
     console.error('[JanitorAI Card Backup] Character enrichment error:', e);
   }
@@ -133,10 +181,6 @@ browser.webRequest.onBeforeRequest.addListener(
         if (parsed.character && parsed.character.id) {
           const character = parsed.character;
           dbg('Character found - id:', character.id, 'name:', character.name);
-          dbg('Character keys:', Object.keys(character));
-          dbg('Character.avatar:', character.avatar);
-          dbg('Character.description length:', (character.description || '').length);
-          dbg('Character.first_messages count:', (character.first_messages || []).length);
 
           if (tabId < 0) {
             dbg('Request from non-tab context, ignoring');
@@ -149,9 +193,6 @@ browser.webRequest.onBeforeRequest.addListener(
           }
         } else {
           dbg('Response has no character object or character.id. Top-level keys:', Object.keys(parsed));
-          if (parsed.character) {
-            dbg('Character object exists but missing id. Character keys:', Object.keys(parsed.character));
-          }
         }
       } catch (e) {
         console.error('[JanitorAI Card Backup] Failed to parse chat data:', e);
@@ -162,6 +203,47 @@ browser.webRequest.onBeforeRequest.addListener(
     };
   },
   { urls: ['*://janitorai.com/hampter/chats*'] },
+  ['blocking']
+);
+
+browser.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    const tabId = details.tabId;
+    if (tabId < 0) return;
+
+    let filter;
+    try {
+      filter = browser.webRequest.filterResponseData(details.requestId);
+    } catch (e) { return; }
+
+    const decoder = new TextDecoder('utf-8');
+    let data = '';
+
+    filter.ondata = (event) => {
+      data += decoder.decode(event.data, { stream: true });
+      filter.write(event.data);
+    };
+
+    filter.onstop = () => {
+      try {
+        const fullChar = JSON.parse(data);
+        if (fullChar.id) {
+          dbg('Passive character data captured from characters API:', fullChar.name);
+          const tabData = tabCharacters.get(tabId);
+          if (tabData && tabData.character && !tabData.complete) {
+            if (mergeCharacterFields(tabData, fullChar)) {
+              setIconState('green', tabId);
+              console.log(`[JanitorAI Card Backup] Character data complete (passive capture): ${tabData.character.name} [tab ${tabId}]`);
+            } else {
+              console.log(`[JanitorAI Card Backup] Passive capture incomplete — personality field is empty [tab ${tabId}]`);
+            }
+          }
+        }
+      } catch (e) {}
+      filter.close();
+    };
+  },
+  { urls: ['*://janitorai.com/hampter/characters/*'] },
   ['blocking']
 );
 
@@ -198,6 +280,12 @@ browser.webRequest.onBeforeRequest.addListener(
 
     filter.onstop = () => {
       dbg('generateAlpha filter onstop, data length:', data.length);
+      const trimmed = data.trim();
+      if (!trimmed.startsWith('{')) {
+        console.log('[JanitorAI Card Backup] generateAlpha returned non-JSON response (likely server error), skipping');
+        filter.close();
+        return;
+      }
       try {
         const parsed = JSON.parse(data);
         dbg('generateAlpha response keys:', Object.keys(parsed));
@@ -206,23 +294,21 @@ browser.webRequest.onBeforeRequest.addListener(
           const systemMsg = parsed.messages.find(m => m.role === 'system');
           if (systemMsg && systemMsg.content) {
             dbg('System message found, content length:', systemMsg.content.length);
-            const extracted = extractCharacterFields(systemMsg.content);
-            dbg('Extracted fields - personality:', extracted.personality.length, 'scenario:', extracted.scenario.length, 'example_dialogs:', extracted.example_dialogs.length);
 
             const tabData = tabId >= 0 ? tabCharacters.get(tabId) : null;
             if (tabData && tabData.character && !tabData.complete) {
-              tabData.character.personality = extracted.personality;
-              tabData.character.scenario = extracted.scenario;
-              tabData.character.example_dialogs = extracted.example_dialogs;
-              tabData.complete = true;
-              dbg('Merged character fields for tab', tabId);
+              const chatName = tabData.character.chat_name || tabData.character.name || '';
+              const extracted = extractFromSystemPrompt(systemMsg.content, chatName);
+              dbg('Extracted fields - personality:', extracted.personality.length, 'scenario:', extracted.scenario.length, 'example_dialogs:', extracted.example_dialogs.length);
 
-              setIconState('green', tabId);
-              console.log(`[JanitorAI Card Backup] Character data complete (generateAlpha): ${tabData.character.name} [tab ${tabId}]`);
+              if (mergeCharacterFields(tabData, extracted)) {
+                setIconState('green', tabId);
+                console.log(`[JanitorAI Card Backup] Character data complete (generateAlpha): ${tabData.character.name} [tab ${tabId}]`);
+              } else {
+                dbg('generateAlpha extraction did not produce personality content for tab', tabId);
+              }
             } else if (tabData && tabData.complete) {
-              dbg('Tab', tabId, 'already complete, skipping generateAlpha merge');
-            } else {
-              dbg('No stored character to merge with for tab', tabId);
+              dbg('Tab', tabId, 'already complete, skipping generateAlpha');
             }
           } else {
             dbg('No system message found in generateAlpha response');
@@ -239,34 +325,6 @@ browser.webRequest.onBeforeRequest.addListener(
   { urls: ['*://janitorai.com/generateAlpha'] },
   ['blocking']
 );
-
-function extractCharacterFields(systemPrompt) {
-  const result = {
-    personality: '',
-    scenario: '',
-    example_dialogs: ''
-  };
-
-  const personalityMatch = systemPrompt.match(/<Start Personality>([\s\S]*?)<End Personality>/);
-  if (personalityMatch) {
-    result.personality = personalityMatch[1].trim();
-    dbg('Extracted personality, length:', result.personality.length);
-  }
-
-  const scenarioMatch = systemPrompt.match(/<Start Scenario>([\s\S]*?)<End Scenario>/);
-  if (scenarioMatch) {
-    result.scenario = scenarioMatch[1].trim();
-    dbg('Extracted scenario, length:', result.scenario.length);
-  }
-
-  const dialogsMatch = systemPrompt.match(/<Start Example Dialog>([\s\S]*?)<End Example Dialog>/);
-  if (dialogsMatch) {
-    result.example_dialogs = dialogsMatch[1].trim();
-    dbg('Extracted example_dialogs, length:', result.example_dialogs.length);
-  }
-
-  return result;
-}
 
 browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (!changeInfo.url) return;
@@ -331,7 +389,6 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       fetchAvatarAsPng(message.avatarUrl).then(arrayBuffer => {
         const bytes = new Uint8Array(arrayBuffer);
         dbg('Avatar fetched and converted, byte count:', bytes.length);
-        dbg('First 16 bytes (PNG header check):', Array.from(bytes.slice(0, 16)));
         sendResponse({ success: true, data: Array.from(bytes) });
       }).catch(e => {
         console.error('[JanitorAI Card Backup] FETCH_AVATAR error:', e);
@@ -344,7 +401,6 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       dbg('Handling DOWNLOAD_JSON, filename:', message.filename);
       const jsonBlob = new Blob([message.json], { type: 'application/json' });
       const jsonBlobUrl = URL.createObjectURL(jsonBlob);
-      dbg('Blob URL created:', jsonBlobUrl);
       browser.downloads.download({
         url: jsonBlobUrl,
         filename: message.filename,
@@ -372,7 +428,6 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const pngBytes = new Uint8Array(message.data);
       const pngBlob = new Blob([pngBytes], { type: 'image/png' });
       const pngBlobUrl = URL.createObjectURL(pngBlob);
-      dbg('Blob URL created:', pngBlobUrl);
       browser.downloads.download({
         url: pngBlobUrl,
         filename: message.filename,
@@ -440,7 +495,6 @@ async function convertImageToPng(blob) {
   const ctx = canvas.getContext('2d');
   ctx.drawImage(bitmap, 0, 0);
   bitmap.close();
-  dbg('Drew bitmap to OffscreenCanvas');
 
   const pngBlob = await canvas.convertToBlob({ type: 'image/png' });
   dbg('convertToBlob success, PNG blob size:', pngBlob.size);

@@ -103,7 +103,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function showCharacterPartial(character) {
-    setStatus('partial', 'Partial capture', 'Send a message to complete');
+    setStatus('partial', 'Capturing...', 'Fetching character data');
 
     characterName.textContent = character.name || character.chat_name || 'Unknown';
     const metaParts = [];
@@ -122,7 +122,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     exportSection.classList.add('hidden');
     downloadBtn.disabled = true;
 
-    showMessage('Basic character data captured. Send a message in the chat to capture personality, scenario, and example dialogs.', 'warning');
+    showMessage('Capturing full character data. This should complete automatically within a few seconds.', 'warning');
   }
 
   function showTip(message) {
