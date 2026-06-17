@@ -53,7 +53,7 @@ function extractFromSystemPrompt(systemPrompt, chatName) {
   return result;
 }
 
-function mergeCharacterFields(tabData, fields) {
+function mergeCharacterFields(tabData, fields, source) {
   if (fields.personality) tabData.character.personality = fields.personality;
   if (fields.scenario) tabData.character.scenario = fields.scenario;
   if (fields.example_dialogs) tabData.character.example_dialogs = fields.example_dialogs;
@@ -62,6 +62,7 @@ function mergeCharacterFields(tabData, fields) {
   if (fields.first_messages) tabData.character.first_messages = fields.first_messages;
   if (tabData.character.personality && tabData.character.personality.trim()) {
     tabData.complete = true;
+    tabData.source = source;
     return true;
   }
   return false;
@@ -83,7 +84,7 @@ async function enrichCharacterFromApi(characterId, tabId) {
     const tabData = tabCharacters.get(tabId);
     if (!tabData || !tabData.character || tabData.complete) return;
 
-    if (mergeCharacterFields(tabData, fullChar)) {
+    if (mergeCharacterFields(tabData, fullChar, 'api')) {
       setIconState('green', tabId);
       console.log(`[JanitorAI Card Backup] Character data complete (characters API): ${tabData.character.name} [tab ${tabId}]`);
     } else {
@@ -120,6 +121,15 @@ function setIconState(state, tabId) {
       },
       badgeText: '',
       badgeBackgroundColor: '#22c55e'
+    },
+    'green-warning': {
+      path: {
+        16: 'icons/icon-16-color.png',
+        48: 'icons/icon-48-color.png',
+        128: 'icons/icon-128-color.png'
+      },
+      badgeText: '!',
+      badgeBackgroundColor: '#f59e0b'
     }
   };
 
@@ -231,7 +241,7 @@ browser.webRequest.onBeforeRequest.addListener(
           dbg('Passive character data captured from characters API:', fullChar.name);
           const tabData = tabCharacters.get(tabId);
           if (tabData && tabData.character && !tabData.complete) {
-            if (mergeCharacterFields(tabData, fullChar)) {
+            if (mergeCharacterFields(tabData, fullChar, 'api')) {
               setIconState('green', tabId);
               console.log(`[JanitorAI Card Backup] Character data complete (passive capture): ${tabData.character.name} [tab ${tabId}]`);
             } else {
@@ -301,9 +311,9 @@ browser.webRequest.onBeforeRequest.addListener(
               const extracted = extractFromSystemPrompt(systemMsg.content, chatName);
               dbg('Extracted fields - personality:', extracted.personality.length, 'scenario:', extracted.scenario.length, 'example_dialogs:', extracted.example_dialogs.length);
 
-              if (mergeCharacterFields(tabData, extracted)) {
-                setIconState('green', tabId);
-                console.log(`[JanitorAI Card Backup] Character data complete (generateAlpha): ${tabData.character.name} [tab ${tabId}]`);
+              if (mergeCharacterFields(tabData, extracted, 'generateAlpha')) {
+                setIconState('green-warning', tabId);
+                console.log(`[JanitorAI Card Backup] Character data complete (generateAlpha fallback): ${tabData.character.name} [tab ${tabId}]`);
               } else {
                 dbg('generateAlpha extraction did not produce personality content for tab', tabId);
               }
@@ -368,7 +378,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       } else {
         dbg('No data for tab', tabId);
       }
-      sendResponse({ success: true, character: tabData?.character || null, complete: !!tabData?.complete });
+      sendResponse({ success: true, character: tabData?.character || null, complete: !!tabData?.complete, source: tabData?.source || null });
       return false;
     }
 

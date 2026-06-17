@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       dbg('Character complete flag:', isComplete);
 
       if (isComplete) {
-        showCharacterReady(currentCharacter);
+        showCharacterReady(currentCharacter, response.source);
       } else {
         showCharacterPartial(currentCharacter);
       }
@@ -81,7 +81,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     statusDetail.textContent = detail;
   }
 
-  function showCharacterReady(character) {
+  function showCharacterReady(character, source) {
     setStatus('ready', 'Character captured', 'Ready to export');
 
     characterName.textContent = character.name || character.chat_name || 'Unknown';
@@ -100,6 +100,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     characterInfo.classList.remove('hidden');
     exportSection.classList.remove('hidden');
     downloadBtn.disabled = false;
+
+    if (source === 'generateAlpha') {
+      showMessage('Character data was captured via fallback. Macros (e.g. {{user}}, {{char}}) may have been replaced with concrete names. Review the exported card before sharing.', 'warning');
+    }
   }
 
   function showCharacterPartial(character) {
